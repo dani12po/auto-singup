@@ -12,23 +12,52 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException,
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 
-# --- PENTING: JALUR CHROME DRIVER MANUAL ---
-# GANTI JALUR DI BAWAH INI DENGAN LOKASI FILE chromedriver.exe ANDA
-# Contoh: r"C:\Users\dani\Downloads\chromedriver.exe"
-# r"" digunakan untuk memastikan Python membaca path sebagai raw string
-CHROME_DRIVER_PATH = r"C:\path\to\your\chromedriver.exe" 
+# --- PENTING: JALUR CHROME DRIVER SEKARANG OTOMATIS ---
+# Skrip ini akan mencari chromedriver.exe di folder yang sama dengan file .py ini.
+# Pastikan file chromedriver.exe ada di folder ini.
+# __file__ adalah variabel bawaan Python yang berisi jalur skrip ini.
+CHROME_DRIVER_PATH = os.path.join(os.path.dirname(__file__), "chromedriver.exe")
 
 # --- Konfigurasi API Mail.tm ---
 MAILTM_API_BASE_URL = "https://api.mail.tm"
 
 # --- Konfigurasi Situs Target ---
-URL_SIGNUP_PAGE = "https://waypoint.roninchain.com/register?clientId=767d97f1-8c63-44c3-86ed-c0c97e270e89&redirect=https%3A%2F%2Fwww.partyicons.com&origin=https%3A%2F%2Fwww.partyicons.com&state=158387ec-3706-41c9-9642-ff9bc3f21ad8&continue=%2Fclient%2F767d97f1-8c63-44c3-86ed-c0c97e270e89%2Fauthorize%3Fredirect%3Dhttps%253A%252F%252Fwww.partyicons.com%26scope%3Demail%2Bopenid%2Bprofile%2Bwallet%26origin%3Dhttps%253A%252F%252Fwww.partyicons.com%26state%3D158387ec-3706-41c9-9642-ff9bc3f21ad8&method=password"
+URL_SIGNUP_PAGE = "https://waypoint.roninchain.com/register?clientId=767d97f1-8c63-44c3-86ed-c0c97e270e89&redirect=https%3A%2F%2Fwww.partyicons.com&origin=https%3A%2F%2Fwww.partyicons.com&state=158387ec-3706-41c9-9642-ff9bc3f21ad8&continue=%2Fclient%2F767d97f1-8c63-44c3-86ed-c0c97e270e89%2Fauthorize%3Fredirect%3Dhttps%253A%252F%252Fwww.partyicons.com%26scope%3Demail%2Bopenid%2Bprofile%2Bwallet%26origin%3Dhttps%253A%252F%252Fwww.partyicons.com%26state%3D158387ec-3706-41c9-9642-ff9bc3d21ad8&method=password"
 
 # --- Fungsi untuk membuat password acak yang kuat ---
-def generate_random_password(length=12):
-    """Menghasilkan password acak yang kuat."""
-    characters = string.ascii_letters + string.digits + string.punctuation
-    password = ''.join(random.choice(characters) for i in range(length))
+def generate_random_password():
+    """
+    Menghasilkan kata sandi acak yang kuat dengan setidaknya:
+    - Satu huruf kapital
+    - Satu huruf kecil
+    - Satu angka
+    Panjang kata sandi akan acak antara 8 dan 10 karakter.
+    """
+    length = random.randint(8, 10)
+    
+    # Definisi set karakter
+    uppercase_letters = string.ascii_uppercase
+    lowercase_letters = string.ascii_lowercase
+    digits = string.digits
+    punctuation = string.punctuation
+    all_characters = uppercase_letters + lowercase_letters + digits + punctuation
+
+    # Memastikan ada setidaknya satu dari setiap jenis
+    password_characters = [
+        random.choice(uppercase_letters),
+        random.choice(lowercase_letters),
+        random.choice(digits)
+    ]
+
+    # Mengisi sisa panjang kata sandi dengan karakter acak
+    for _ in range(length - 3):
+        password_characters.append(random.choice(all_characters))
+
+    # Mengacak urutan karakter agar tidak ada pola
+    random.shuffle(password_characters)
+
+    # Menggabungkan list karakter menjadi string
+    password = "".join(password_characters)
     return password
 
 # --- Fungsi untuk membuat passphrase acak ---
@@ -66,7 +95,7 @@ def create_mailtm_account():
         return None, None, None
 
     username = "user" + str(int(time.time()))
-    mailtm_password = generate_random_password(16)
+    mailtm_password = generate_random_password()
     email_address = f"{username}@{domain}"
     
     data = {
@@ -117,7 +146,10 @@ def delete_mailtm_message(token, message_id):
 
 # --- Fungsi untuk memeriksa inbox, menyimpan, dan mencari kode verifikasi ---
 def check_for_verification_code(token, max_retries=15, delay=5):
-    """Memeriksa inbox secara berulang, menyimpan isi, dan mencari kode verifikasi 6 digit."""
+    """
+    Memeriksa inbox secara berulang, menyimpan isi, dan mencari kode verifikasi 6 digit.
+    Fungsi ini sekarang mengembalikan kode dan ID pesan, tetapi TIDAK menghapus pesan.
+    """
     print("Menunggu email verifikasi...")
     headers = {"Authorization": f"Bearer {token}"}
     for i in range(max_retries):
@@ -143,12 +175,12 @@ def check_for_verification_code(token, max_retries=15, delay=5):
                 if match:
                     verification_code = match.group(1)
                     print(f"Kode verifikasi 6 digit ditemukan: {verification_code}")
-                    delete_mailtm_message(token, latest_email_id)
-                    return verification_code
+                    return verification_code, latest_email_id
                 else:
                     print("Kode verifikasi tidak ditemukan dalam isi email.")
+                    # Jika kode tidak ditemukan, kita tetap bisa menghapus email yang tidak relevan
                     delete_mailtm_message(token, latest_email_id)
-                    return None
+                    return None, None
         except requests.exceptions.RequestException as e:
             print(f"Gagal memeriksa email: {e}")
         
@@ -156,14 +188,69 @@ def check_for_verification_code(token, max_retries=15, delay=5):
         time.sleep(delay)
 
     print("Melebihi batas waktu tunggu untuk email verifikasi.")
-    return None
+    return None, None
 
+# --- Fungsi untuk membaca kata sandi dari file ---
+def read_password_from_file(filename="recovery-pass.txt"):
+    """
+    Membaca kata sandi dari file teks yang diberikan.
+    """
+    try:
+        with open(filename, "r") as f:
+            password = f.read().strip()
+            return password
+    except FileNotFoundError:
+        print(f"Error: File '{filename}' tidak ditemukan. Bot akan menggunakan kata sandi acak.")
+        return None
+
+# --- FUNGSI BARU: Mengisi dan menyimpan kata sandi pemulihan ---
+# Fungsi ini sekarang menerima 'password' sebagai argumen
+def handle_password_and_terms_setup(driver, wait, new_password):
+    """
+    Mengisi dua kolom kata sandi pemulihan dengan kata sandi,
+    mencentang kotak persetujuan, dan mengklik tombol Continue.
+    """
+    print("Menangani halaman pengaturan kata sandi pemulihan...")
+    try:
+        # Menggunakan selector CSS yang lebih spesifik untuk input password
+        password_input_selector = "input[type='password'][name='password']"
+        confirm_password_input_selector = "input[type='password'][name='confirm']"
+        # Selector untuk checkbox "I agree"
+        terms_checkbox_selector = "label[data-rac] input[type='checkbox']"
+        
+        password_input = wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, password_input_selector)))
+        confirm_password_input = wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, confirm_password_input_selector)))
+
+        print(f"Mengisi kata sandi baru ke dalam kolom: {new_password}")
+        password_input.send_keys(new_password)
+        confirm_password_input.send_keys(new_password)
+        
+        # Menemukan dan mengklik checkbox
+        terms_checkbox = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, terms_checkbox_selector)))
+        if not terms_checkbox.is_selected():
+            terms_checkbox.click()
+            print("Checkbox 'I agree' berhasil dicentang.")
+        else:
+            print("Checkbox 'I agree' sudah dicentang.")
+
+        continue_button = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button[type='submit']")))
+        continue_button.click()
+        
+        print("Kata sandi dan kotak persetujuan berhasil diisi dan dikirim.")
+        return new_password
+    
+    except TimeoutException:
+        print("Waktu habis saat mencari elemen kata sandi atau kotak persetujuan.")
+        raise
+    except NoSuchElementException:
+        print("Elemen kata sandi atau kotak persetujuan tidak ditemukan.")
+        raise
+        
 # --- Fungsi untuk menangani halaman pembuatan passphrase ---
 def handle_passphrase_setup(driver, wait, passphrase):
     """Mengisi dan mengirimkan formulir passphrase."""
     print("Menangani halaman pengaturan passphrase...")
     try:
-        # Cek apakah elemen 'passphrase-input' ada di halaman
         passphrase_input = wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, "input.passphrase-input")))
         passphrase_confirm_button = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button.confirm-button")))
         
@@ -201,14 +288,12 @@ def run_signup_bot():
     # chrome_options.add_argument("--headless")
     chrome_options.add_argument("--window-size=1920,1080")
 
-    # Memastikan file driver ada sebelum mencoba menggunakannya
     if not os.path.exists(CHROME_DRIVER_PATH):
         print("Kesalahan: chromedriver.exe tidak ditemukan di jalur yang diberikan.")
-        print(f"Pastikan Anda mengunduh driver yang benar dan mengubah CHROME_DRIVER_PATH.")
+        print(f"Pastikan file 'chromedriver.exe' berada di folder yang sama dengan skrip ini: {os.path.dirname(__file__)}")
         return
     
     try:
-        # Gunakan Service untuk menunjuk ke jalur Chrome Driver yang diunduh secara manual
         service = Service(executable_path=CHROME_DRIVER_PATH)
         driver = webdriver.Chrome(service=service, options=chrome_options)
     except WebDriverException as e:
@@ -217,7 +302,6 @@ def run_signup_bot():
         return
     
     try:
-        # 1. Buat akun email sementara
         email_address, account_id, mailtm_password = create_mailtm_account()
         if not email_address:
             driver.quit()
@@ -226,13 +310,14 @@ def run_signup_bot():
         print(f"Membuka halaman pendaftaran: {URL_SIGNUP_PAGE}")
         driver.get(URL_SIGNUP_PAGE)
         
-        wait = WebDriverWait(driver, 30)
+        # --- PERBAIKAN: Meningkatkan waktu tunggu global menjadi 60 detik ---
+        wait = WebDriverWait(driver, 60)
         
         print("Mengisi formulir pendaftaran...")
         email_input = wait.until(EC.visibility_of_element_located((By.NAME, "email")))
         password_input = wait.until(EC.visibility_of_element_located((By.NAME, "password")))
         
-        signup_password = generate_random_password(12)
+        signup_password = generate_random_password()
         
         email_input.send_keys(email_address)
         password_input.send_keys(signup_password)
@@ -247,37 +332,63 @@ def run_signup_bot():
             driver.quit()
             return
 
-        verification_code = check_for_verification_code(token)
+        verification_code, message_id = check_for_verification_code(token)
         
         if verification_code:
             print("Mengisi kode verifikasi pada halaman...")
-            code_input = wait.until(EC.visibility_of_element_located((By.ID, "verification-code")))
-            code_input.send_keys(verification_code)
+            try:
+                code_input = wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, 'input[autocomplete="one-time-code"][data-input-otp="true"]')))
+                code_input.send_keys(verification_code)
+                print("Kode verifikasi berhasil diisi.")
+                
+                # --- PERUBAHAN: Menghilangkan waktu tunggu 5 detik ---
+                
+                # --- PERBAIKAN: Menggunakan XPath yang lebih spesifik untuk menemukan tombol "Continue" ---
+                verify_button = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Continue')]")))
+                print("Tombol 'Continue' ditemukan. Mengklik tombol.")
+                verify_button.click()
             
-            verify_button = wait.until(EC.element_to_be_clickable((By.ID, "verify-button")))
-            verify_button.click()
+                print("Kode verifikasi berhasil dimasukkan dan dikirim!")
+                delete_mailtm_message(token, message_id)
 
-            print("Kode verifikasi berhasil dimasukkan dan dikirim!")
+                # --- PERUBAHAN UTAMA: Membaca kata sandi dari file untuk formulir pemulihan ---
+                print("Menunggu halaman password pemulihan...")
+                
+                # Baca kata sandi dari file recovery-pass.txt
+                recovery_password = read_password_from_file()
+                
+                # Jika file tidak ada, bot akan membuat kata sandi acak.
+                if not recovery_password:
+                    recovery_password = generate_random_password()
+                    print("Menggunakan kata sandi acak karena file tidak ditemukan.")
+                else:
+                    print("Berhasil membaca kata sandi dari file.")
 
-            passphrase = generate_passphrase()
-            handle_passphrase_setup(driver, wait, passphrase)
-            
-            handle_final_authorization(driver, wait)
-            
-            save_to_file("hasil.txt", f"Email: {email_address} | Password: {signup_password} | Passphrase: {passphrase}")
+                # Menggunakan kata sandi yang dibaca dari file (atau yang baru dibuat)
+                handle_password_and_terms_setup(driver, wait, recovery_password)
+                
+                # Menyimpan kata sandi pemulihan
+                save_to_file("recovery-pass.txt", recovery_password)
 
-            print("Semua proses pendaftaran dan otorisasi berhasil diselesaikan!")
-            
+                passphrase = generate_passphrase()
+                handle_passphrase_setup(driver, wait, passphrase)
+                
+                handle_final_authorization(driver, wait)
+                
+                # Menyimpan semua data yang relevan
+                save_to_file("hasil.txt", f"Email: {email_address} | Password: {signup_password} | Recovery Password: {recovery_password} | Passphrase: {passphrase}")
+
+                print("Semua proses pendaftaran dan otorisasi berhasil diselesaikan!")
+            except (TimeoutException, NoSuchElementException) as e:
+                print(f"Gagal mengisi kode verifikasi atau melanjutkan ke langkah berikutnya. Error: {e}")
         else:
             print("Proses verifikasi gagal.")
 
     except (TimeoutException, NoSuchElementException) as e:
-        print(f"Elemen tidak ditemukan atau waktu habis: {e}")
-        print("Pastikan selector di dalam skrip sudah sesuai dengan halaman web.")
+        print(f"Elemen tidak ditemukan atau waktu habis. Pastikan selector di dalam skrip sudah sesuai dengan halaman web. Error: {e}")
     except Exception as e:
         print(f"Terjadi kesalahan: {e}")
     finally:
-        # Selalu pastikan untuk menutup driver
         if 'driver' in locals() and driver.service.is_connectable():
             driver.quit()
 
